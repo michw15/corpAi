@@ -8,7 +8,11 @@ import pl.pkobp.corpai.llm.domain.AdvisorStyle;
 import pl.pkobp.corpai.llm.domain.LlmResponse;
 import pl.pkobp.corpai.llm.domain.PromptTemplate;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Map;
 
 /**
@@ -79,11 +83,11 @@ public class LlmGatewayService {
     }
 
     private LlmResponse callLlmWithCache(String prompt) {
-        String cacheKey = CACHE_PREFIX + prompt.hashCode();
+        String cacheKey = CACHE_PREFIX + sha256(prompt);
 
         Object cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached instanceof LlmResponse response) {
-            log.debug("LLM cache hit for prompt hash: {}", prompt.hashCode());
+            log.debug("LLM cache hit for prompt sha256: {}", sha256(prompt));
             return LlmResponse.builder()
                     .content(response.getContent())
                     .modelUsed(response.getModelUsed())
@@ -121,6 +125,16 @@ public class LlmGatewayService {
                 return callLlmWithRetry(prompt, attempt + 1);
             }
             throw new RuntimeException("LLM call failed after " + MAX_RETRIES + " retries", e);
+        }
+    }
+
+    private String sha256(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 }

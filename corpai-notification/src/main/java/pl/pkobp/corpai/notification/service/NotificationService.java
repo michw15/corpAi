@@ -9,6 +9,8 @@ import pl.pkobp.corpai.notification.domain.NotificationTrigger;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
 
 /**
  * Service for sending notifications to advisors via multiple channels.
@@ -53,7 +55,7 @@ public class NotificationService {
             message.setTo(trigger.getAdvisorId() + "@pkobp.pl");
             message.setSubject("CorpAI Alert: Szansa sprzedażowa - " + trigger.getCompanyName());
             message.setText(buildEmailBody(trigger));
-            message.setSentDate(java.sql.Timestamp.valueOf(LocalDateTime.now()));
+            message.setSentDate(Date.from(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant()));
             mailSender.send(message);
             log.info("Email notification sent to advisor: {}", trigger.getAdvisorId());
         } catch (Exception e) {

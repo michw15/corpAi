@@ -42,7 +42,7 @@ public class PromptTemplateEngine {
                 return resource.getContentAsString(StandardCharsets.UTF_8);
             } catch (IOException e) {
                 log.warn("Could not load template file: {}, using fallback", t.getTemplateFile());
-                return "Analyze the following company data: {{data}}";
+                return "Analyze the following company data [template '" + t.getTemplateFile() + "' failed to load]: {{data}}";
             }
         });
     }

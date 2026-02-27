@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class DataSanitizer {
 
+    // Polish NRB account number format: exactly 26 digits (2-digit check + 24-digit BBAN)
     private static final Pattern ACCOUNT_NUMBER_PATTERN = Pattern.compile("\\b\\d{26}\\b");
     private static final Pattern INTERNAL_ID_PATTERN = Pattern.compile("\\b(ADV|CRM|INT)-\\w+\\b");
     private static final Pattern PESEL_PATTERN = Pattern.compile("\\b\\d{11}\\b");
