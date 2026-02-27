@@ -89,6 +89,17 @@ services:
       timeout: 10s
       retries: 5
 
+  corpai-frontend:
+    build:
+      context: ./corpai-frontend
+      dockerfile: Dockerfile
+    container_name: corpai-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - corpai-gateway
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:latest
     container_name: corpai-grafana

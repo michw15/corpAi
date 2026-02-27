@@ -65,6 +65,7 @@ CorpAI is an **agentic AI assistant** that empowers corporate banking advisors b
 | `corpai-data-collector` | 8086 | External data collector (outside SIB zone) |
 | `corpai-llm-gateway` | 8087 | LLM abstraction (GPT-4/Azure OpenAI, data sanitization) |
 | `corpai-notification` | 8089 | Proactive advisor notifications (V3) |
+| `corpai-frontend` | 3001 | React web UI – advisor dashboard, analysis forms, report viewer |
 | `corpai-common` | – | Shared domain model and Kafka events |
 
 ---
@@ -73,6 +74,7 @@ CorpAI is an **agentic AI assistant** that empowers corporate banking advisors b
 
 - **Java 21**
 - **Maven 3.9+**
+- **Node.js 20+** (for frontend development)
 - **Docker & Docker Compose**
 
 ---
@@ -97,7 +99,23 @@ mvn spring-boot:run -pl corpai-company-profile
 # ... etc
 ```
 
+### 3a. Start the React Frontend (development)
+```bash
+cd corpai-frontend
+npm install
+npm run dev
+# Opens at http://localhost:3001 with hot-reload
+# API calls are proxied to the gateway at http://localhost:8079
+```
+
+### 3b. Build & Run Frontend via Docker Compose
+```bash
+docker compose up -d corpai-frontend
+# Accessible at http://localhost:3001
+```
+
 ### 4. Access Services
+- **React UI**: http://localhost:3001
 - **API Gateway**: http://localhost:8079
 - **Kafka UI**: http://localhost:8090
 - **Grafana**: http://localhost:3000 (admin/corpai_admin)
@@ -156,6 +174,7 @@ mvn spring-boot:run -pl corpai-company-profile
 | Tracing | Micrometer Tracing |
 | Build | Maven 3.9 |
 | Containers | Docker Compose |
+| **Frontend** | **React 19 + TypeScript + Vite + Tailwind CSS** |
 
 ---
 
