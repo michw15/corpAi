@@ -59,7 +59,7 @@ public class EmailDraftGenerator {
 
         email.append("\n");
         if (isPolish(preferences)) {
-            email.append("Będę wdzięczny/a za potwierdzenie spotkania.\n\nZ poważaniem,\n");
+            email.append("Będę wdzięczny/-a za potwierdzenie spotkania.\n\nZ poważaniem,\n");
         } else {
             email.append("I look forward to discussing these topics with you.\n\nBest regards,\n");
         }

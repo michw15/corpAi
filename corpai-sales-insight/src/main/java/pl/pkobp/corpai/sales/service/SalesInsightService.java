@@ -28,6 +28,8 @@ public class SalesInsightService implements SalesInsightUseCase {
     private final PatternMatchingEngine patternMatchingEngine;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+
+
     @Override
     public List<SalesOpportunity> detectOpportunities(String nip, AnalysisContext context) {
         log.info("Detecting sales opportunities for NIP: {}", nip);
@@ -49,6 +51,10 @@ public class SalesInsightService implements SalesInsightUseCase {
         if (context.getEsgReport() != null) {
             SalesOpportunity esgOpp = detectEsgOpportunity(context.getEsgReport());
             if (esgOpp != null) opportunities.add(esgOpp);
+        }
+
+        if (context.getFinancialIndicators() != null) {
+            opportunities.addAll(patternMatchingEngine.matchPatterns(nip, context.getFinancialIndicators()));
         }
 
         List<SalesOpportunity> rankedOpportunities = scoreAndRank(opportunities);
