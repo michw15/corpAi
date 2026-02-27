@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'corpai-orchestrator'
+    static_configs:
+      - targets: ['corpai-orchestrator:8080']
+    metrics_path: '/actuator/prometheus'
+
+  - job_name: 'corpai-company-profile'
+    static_configs:
+      - targets: ['corpai-company-profile:8081']
+    metrics_path: '/actuator/prometheus'
+
+  - job_name: 'corpai-financial-analysis'
+    static_configs:
+      - targets: ['corpai-financial-analysis:8082']
+    metrics_path: '/actuator/prometheus'
+
+  - job_name: 'corpai-aml-kyc'
+    static_configs:
+      - targets: ['corpai-aml-kyc:8083']
+    metrics_path: '/actuator/prometheus'
+
+  - job_name: 'corpai-sales-insight'
+    static_configs:
+      - targets: ['corpai-sales-insight:8084']
+    metrics_path: '/actuator/prometheus'
+
+  - job_name: 'corpai-report-generator'
+    static_configs:
+      - targets: ['corpai-report-generator:8085']
+    metrics_path: '/actuator/prometheus'
+
+  - job_name: 'corpai-gateway'
+    static_configs:
+      - targets: ['corpai-gateway:8079']
+    metrics_path: '/actuator/prometheus'
