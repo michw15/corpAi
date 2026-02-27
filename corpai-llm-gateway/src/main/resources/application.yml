@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: corpai-llm-gateway
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: corpai-llm-gateway
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "pl.pkobp.corpai.*"
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+llm:
+  openai:
+    api-key: ${OPENAI_API_KEY:placeholder}
+    model: gpt-4-turbo
+    temperature: 0.3
+    max-tokens: 4096
+  azure-openai:
+    endpoint: ${AZURE_OPENAI_ENDPOINT:}
+    api-key: ${AZURE_OPENAI_KEY:}
+    deployment-name: ${AZURE_OPENAI_DEPLOYMENT:gpt-4}
+  strategy: openai  # openai | azure-openai | gemini
+
+server:
+  port: 8087
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    pl.pkobp.corpai: DEBUG

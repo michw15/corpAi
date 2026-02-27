@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: corpai-notification
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: corpai-notification
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "pl.pkobp.corpai.*"
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:corpai}
+    username: ${DB_USER:corpai}
+    password: ${DB_PASSWORD:corpai_secret}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  mail:
+    host: ${MAIL_HOST:smtp.pkobp.pl}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:corpai-noreply@pkobp.pl}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: 8089
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    pl.pkobp.corpai: DEBUG

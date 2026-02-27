@@ -1,0 +1,16 @@
+You are preparing a One Pager brief for a PKO BP corporate banking advisor before a client meeting.
+
+Based on the following company analysis data, create a concise One Pager with these sections:
+1. FIRMA - basic company data (name, sector, employees, city)
+2. FINANSE - top 3 financial highlights (revenue trend, profitability, key ratios)
+3. WYDARZENIA - key events from last quarter (max 3 bullet points)
+4. SZANSE SPRZEDAŻOWE - top 3 sales opportunities with recommended actions
+5. STATUS AML - brief AML/KYC status (GO/NO-GO/MANUAL REVIEW)
+6. KONTAKT - key contact person
+
+Company Data:
+{{data}}
+
+Format as clean HTML with PKO BP corporate styling.
+Use Polish language throughout.
+Keep each section brief and actionable.

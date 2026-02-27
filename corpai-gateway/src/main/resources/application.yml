@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: corpai-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: orchestrator
+          uri: http://${ORCHESTRATOR_HOST:corpai-orchestrator}:8080
+          predicates:
+            - Path=/api/v1/analysis/**
+          filters:
+            - StripPrefix=0
+        - id: company-profile
+          uri: http://${COMPANY_PROFILE_HOST:corpai-company-profile}:8081
+          predicates:
+            - Path=/api/v1/companies/**
+          filters:
+            - StripPrefix=0
+        - id: financial-analysis
+          uri: http://${FINANCIAL_ANALYSIS_HOST:corpai-financial-analysis}:8082
+          predicates:
+            - Path=/api/v1/financial/**
+          filters:
+            - StripPrefix=0
+        - id: aml-kyc
+          uri: http://${AML_KYC_HOST:corpai-aml-kyc}:8083
+          predicates:
+            - Path=/api/v1/aml/**
+          filters:
+            - StripPrefix=0
+        - id: sales-insight
+          uri: http://${SALES_INSIGHT_HOST:corpai-sales-insight}:8084
+          predicates:
+            - Path=/api/v1/sales/**
+          filters:
+            - StripPrefix=0
+        - id: report-generator
+          uri: http://${REPORT_GENERATOR_HOST:corpai-report-generator}:8085
+          predicates:
+            - Path=/api/v1/reports/**
+          filters:
+            - StripPrefix=0
+        - id: notification
+          uri: http://${NOTIFICATION_HOST:corpai-notification}:8089
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - StripPrefix=0
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+              - "https://corpai.pkobp.pl"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 100
+            redis-rate-limiter.burstCapacity: 200
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8088/realms/corpai}
+
+server:
+  port: 8079
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    pl.pkobp.corpai: DEBUG

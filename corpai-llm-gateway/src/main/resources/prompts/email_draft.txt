@@ -1,0 +1,19 @@
+You are helping a PKO BP corporate banking advisor prepare an email to a client before their meeting.
+
+Create a professional email draft in Polish language based on the following context.
+The email should:
+1. Thank the client for their partnership with PKO BP
+2. Briefly mention 3 key topics for the upcoming meeting
+3. Express looking forward to the discussion
+4. Be signed with the advisor's name
+
+Context:
+{{context}}
+
+Communication style: {{style}}
+
+Important:
+- Keep the email concise (max 200 words)
+- Focus on client value, not bank products
+- Use formal Polish business language
+- Do not include any internal bank system references
