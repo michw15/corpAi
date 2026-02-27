@@ -4,13 +4,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
 import pl.pkobp.corpai.common.domain.AnalysisRequest;
 import pl.pkobp.corpai.orchestrator.domain.AggregatedAnalysis;
 import pl.pkobp.corpai.orchestrator.service.AnalysisStateManager;
 import pl.pkobp.corpai.orchestrator.service.OrchestratorService;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * REST controller for analysis orchestration.
@@ -28,9 +29,10 @@ public class AnalysisController {
      * Submit a new company analysis request.
      */
     @PostMapping
-    public ResponseEntity<Map<String, String>> submitAnalysis(@RequestBody AnalysisRequest request) {
+    public ResponseEntity<Map<String, String>> submitAnalysis(@Valid @RequestBody AnalysisRequest request) {
         log.info("Received analysis request for NIP: {}", request.getNip());
-        CompletableFuture<String> future = orchestratorService.orchestrate(request);
+        // Orchestration continues asynchronously; response is returned immediately with ACCEPTED status
+        orchestratorService.orchestrate(request);
         return ResponseEntity.accepted()
                 .body(Map.of("correlationId", request.getCorrelationId(), "status", "ACCEPTED"));
     }
