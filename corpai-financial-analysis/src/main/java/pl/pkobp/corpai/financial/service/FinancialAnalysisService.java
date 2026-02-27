@@ -74,11 +74,12 @@ public class FinancialAnalysisService implements FinancialAnalysisUseCase {
     public BigDecimal calculatePreLimit(String nip) {
         log.info("Calculating pre-limit for NIP: {}", nip);
         List<FinancialIndicators> indicators = analyzeLastThreeYears(nip);
-        if (indicators.isEmpty() || indicators.get(0).getRevenuePln() == null) {
+        FinancialIndicators latest = indicators.get(indicators.size() - 1);
+        if (latest.getRevenuePln() == null) {
             return BigDecimal.ZERO;
         }
         // Simple pre-limit: 25% of annual revenue
-        return indicators.get(0).getRevenuePln()
+        return latest.getRevenuePln()
                 .multiply(BigDecimal.valueOf(0.25))
                 .setScale(0, RoundingMode.HALF_UP);
     }
