@@ -60,11 +60,7 @@ spring:
               - OPTIONS
             allowedHeaders: "*"
             allowCredentials: true
-      default-filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: 100
-            redis-rate-limiter.burstCapacity: 200
+      # default-filters with RequestRateLimiter removed - requires KeyResolver bean and Redis reactive
   data:
     redis:
       host: ${REDIS_HOST:localhost}
