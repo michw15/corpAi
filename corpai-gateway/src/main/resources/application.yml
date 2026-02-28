@@ -5,43 +5,43 @@ spring:
     gateway:
       routes:
         - id: orchestrator
-          uri: http://${ORCHESTRATOR_HOST:corpai-orchestrator}:8080
+          uri: http://${ORCHESTRATOR_HOST:localhost}:8080
           predicates:
             - Path=/api/v1/analysis/**
           filters:
             - StripPrefix=0
         - id: company-profile
-          uri: http://${COMPANY_PROFILE_HOST:corpai-company-profile}:8081
+          uri: http://${COMPANY_PROFILE_HOST:localhost}:8081
           predicates:
             - Path=/api/v1/companies/**
           filters:
             - StripPrefix=0
         - id: financial-analysis
-          uri: http://${FINANCIAL_ANALYSIS_HOST:corpai-financial-analysis}:8082
+          uri: http://${FINANCIAL_ANALYSIS_HOST:localhost}:8082
           predicates:
             - Path=/api/v1/financial/**
           filters:
             - StripPrefix=0
         - id: aml-kyc
-          uri: http://${AML_KYC_HOST:corpai-aml-kyc}:8083
+          uri: http://${AML_KYC_HOST:localhost}:8083
           predicates:
             - Path=/api/v1/aml/**
           filters:
             - StripPrefix=0
         - id: sales-insight
-          uri: http://${SALES_INSIGHT_HOST:corpai-sales-insight}:8084
+          uri: http://${SALES_INSIGHT_HOST:localhost}:8084
           predicates:
             - Path=/api/v1/sales/**
           filters:
             - StripPrefix=0
         - id: report-generator
-          uri: http://${REPORT_GENERATOR_HOST:corpai-report-generator}:8085
+          uri: http://${REPORT_GENERATOR_HOST:localhost}:8085
           predicates:
             - Path=/api/v1/reports/**
           filters:
             - StripPrefix=0
         - id: notification
-          uri: http://${NOTIFICATION_HOST:corpai-notification}:8089
+          uri: http://${NOTIFICATION_HOST:localhost}:8089
           predicates:
             - Path=/api/v1/notifications/**
           filters:
@@ -50,7 +50,7 @@ spring:
         corsConfigurations:
           '[/**]':
             allowedOrigins:
-              - "http://localhost:3000"
+              - "http://localhost:3001"
               - "https://corpai.pkobp.pl"
             allowedMethods:
               - GET
