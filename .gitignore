@@ -1,0 +1,24 @@
+# Environment variables (keep .env.example, ignore actual secrets)
+.env
+.env.local
+.env.*.local
+
+# Maven build output
+target/
+*.jar
+*.war
+*.class
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
