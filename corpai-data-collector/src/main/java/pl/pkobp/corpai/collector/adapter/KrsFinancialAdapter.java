@@ -1,7 +1,7 @@
 package pl.pkobp.corpai.collector.adapter;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -12,12 +12,13 @@ import java.util.List;
  */
 @Component
 @Slf4j
-@RequiredArgsConstructor
 public class KrsFinancialAdapter {
 
-    private static final String KRS_API_BASE_URL = "https://api.krs.gov.pl";
+    private final WebClient krsWebClient;
 
-    private final WebClient.Builder webClientBuilder;
+    public KrsFinancialAdapter(@Qualifier("krsWebClient") WebClient krsWebClient) {
+        this.krsWebClient = krsWebClient;
+    }
 
     /**
      * Fetches financial statement PDFs for a company.
