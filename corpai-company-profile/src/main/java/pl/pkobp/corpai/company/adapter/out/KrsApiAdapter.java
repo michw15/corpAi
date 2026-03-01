@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * HTTP adapter for the KRS (National Court Register) API.
- * Calls the real KRS API at https://api.krs.gov.pl
+ * Calls the real KRS API at https://api-krs.ms.gov.pl
  */
 @Component
 @Slf4j
