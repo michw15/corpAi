@@ -6,10 +6,13 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import pl.pkobp.corpai.common.domain.SalesOpportunity;
 import pl.pkobp.corpai.common.events.SalesOpportunityDetectedEvent;
+import pl.pkobp.corpai.notification.domain.Notification;
 import pl.pkobp.corpai.notification.domain.NotificationTrigger;
+import pl.pkobp.corpai.notification.repository.NotificationRepository;
 import pl.pkobp.corpai.notification.service.NotificationService;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -22,6 +25,7 @@ import java.util.UUID;
 public class KafkaNotificationConsumer {
 
     private final NotificationService notificationService;
+    private final NotificationRepository notificationRepository;
 
     @KafkaListener(topics = SalesOpportunityDetectedEvent.TOPIC, groupId = "corpai-notification")
     public void onSalesOpportunityDetected(SalesOpportunityDetectedEvent event) {
@@ -44,6 +48,18 @@ public class KafkaNotificationConsumer {
                             .actionSuggestion(opp.getRecommendedAction())
                             .build();
                     notificationService.sendOpportunityAlert(trigger);
+
+                    Notification notification = Notification.builder()
+                            .id(trigger.getId())
+                            .advisorId(event.getAdvisorId())
+                            .companyNip(event.getCompanyNip())
+                            .title("Szansa sprzedażowa: " + (opp.getType() != null ? opp.getType().name() : "N/A"))
+                            .message(opp.getDescription())
+                            .priority(opp.getPriority())
+                            .createdAt(LocalDateTime.now())
+                            .read(false)
+                            .build();
+                    notificationRepository.save(notification);
                 });
     }
 }

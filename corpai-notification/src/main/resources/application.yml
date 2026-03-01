@@ -15,7 +15,7 @@ spring:
     password: ${DB_PASSWORD:corpai_secret}
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
   mail:
     host: ${MAIL_HOST:smtp.pkobp.pl}
