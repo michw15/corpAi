@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Service implementing company profile use cases.
  * Caches results in Redis with 24h TTL.
+ * Company profiles are fetched from the KRS API using the KRS number.
  */
 @Service
 @Slf4j
@@ -32,7 +33,7 @@ public class CompanyProfileService implements CompanyProfileUseCase {
     private final RedisTemplate<String, Object> redisTemplate;
 
     @Override
-    public Company getOrFetchProfile(String nip) {
+    public Company getOrFetchProfile(String nip, String krs) {
         String cacheKey = CACHE_PREFIX + nip;
         Object cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached instanceof Company company) {
@@ -40,8 +41,12 @@ public class CompanyProfileService implements CompanyProfileUseCase {
             return company;
         }
 
-        log.info("Fetching company profile for NIP: {}", nip);
-        Company company = krsApiPort.fetchCompanyByNip(nip);
+        log.info("Fetching company profile for NIP: {}, KRS: {}", nip, krs);
+        if (krs == null || krs.isBlank()) {
+            log.warn("KRS number not provided for NIP: {}; skipping KRS API fetch", nip);
+            return null;
+        }
+        Company company = krsApiPort.fetchCompanyByKrs(krs);
         if (company != null) {
             redisTemplate.opsForValue().set(cacheKey, company, CACHE_TTL_HOURS, TimeUnit.HOURS);
         }
@@ -55,8 +60,8 @@ public class CompanyProfileService implements CompanyProfileUseCase {
     }
 
     @Override
-    public List<BoardMember> getBoardMembers(String nip) {
-        Company company = getOrFetchProfile(nip);
+    public List<BoardMember> getBoardMembers(String nip, String krs) {
+        Company company = getOrFetchProfile(nip, krs);
         if (company != null && company.getBoardMembers() != null) {
             return company.getBoardMembers();
         }
@@ -64,8 +69,8 @@ public class CompanyProfileService implements CompanyProfileUseCase {
     }
 
     @Override
-    public ContactInfo findContactInfo(String nip) {
-        Company company = getOrFetchProfile(nip);
+    public ContactInfo findContactInfo(String nip, String krs) {
+        Company company = getOrFetchProfile(nip, krs);
         if (company == null || company.getBoardMembers() == null || company.getBoardMembers().isEmpty()) {
             return null;
         }
