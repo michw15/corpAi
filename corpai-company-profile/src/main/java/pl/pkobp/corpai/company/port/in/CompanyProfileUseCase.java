@@ -12,9 +12,14 @@ import java.util.List;
  */
 public interface CompanyProfileUseCase {
     /**
-     * Returns a cached or freshly fetched company profile by NIP.
+     * Returns a cached or freshly fetched company profile.
+     * Uses the KRS number to fetch data from the KRS API (NIP is used as cache key).
+     *
+     * @param nip company NIP (used as cache key)
+     * @param krs company KRS number (required for KRS API lookup)
+     * @return the company profile, or {@code null} if not found or krs is blank
      */
-    Company getOrFetchProfile(String nip);
+    Company getOrFetchProfile(String nip, String krs);
 
     /**
      * Returns the ownership structure for the given NIP.
@@ -22,12 +27,12 @@ public interface CompanyProfileUseCase {
     AmlCheckResult.OwnershipGraph getOwnershipStructure(String nip);
 
     /**
-     * Returns the board members for the given NIP.
+     * Returns the board members for the given NIP and KRS number.
      */
-    List<BoardMember> getBoardMembers(String nip);
+    List<BoardMember> getBoardMembers(String nip, String krs);
 
     /**
-     * Finds contact info for the given NIP.
+     * Finds contact info for the given NIP and KRS number.
      */
-    ContactInfo findContactInfo(String nip);
+    ContactInfo findContactInfo(String nip, String krs);
 }
