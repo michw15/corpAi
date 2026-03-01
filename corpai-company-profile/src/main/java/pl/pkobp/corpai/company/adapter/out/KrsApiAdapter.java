@@ -1,7 +1,7 @@
 package pl.pkobp.corpai.company.adapter.out;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import pl.pkobp.corpai.common.domain.Company;
@@ -15,22 +15,19 @@ import java.util.List;
  */
 @Component
 @Slf4j
-@RequiredArgsConstructor
 public class KrsApiAdapter implements KrsApiPort {
 
-    private static final String KRS_API_BASE_URL = "https://api.krs.gov.pl";
+    private final WebClient krsWebClient;
 
-    private final WebClient.Builder webClientBuilder;
-
-    private WebClient getClient() {
-        return webClientBuilder.baseUrl(KRS_API_BASE_URL).build();
+    public KrsApiAdapter(@Qualifier("krsWebClient") WebClient krsWebClient) {
+        this.krsWebClient = krsWebClient;
     }
 
     @Override
     public Company fetchCompanyByNip(String nip) {
         log.info("Fetching company from KRS API by NIP: {}", nip);
         try {
-            return getClient()
+            return krsWebClient
                     .get()
                     .uri("/api/krs/OdpisAktualny/{nip}?rejestr=P&format=json", nip)
                     .retrieve()
@@ -46,7 +43,7 @@ public class KrsApiAdapter implements KrsApiPort {
     public Company fetchCompanyByKrs(String krs) {
         log.info("Fetching company from KRS API by KRS: {}", krs);
         try {
-            return getClient()
+            return krsWebClient
                     .get()
                     .uri("/api/krs/OdpisAktualny/{krs}?rejestr=P&format=json", krs)
                     .retrieve()
