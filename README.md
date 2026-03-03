@@ -204,3 +204,184 @@ All API calls through the gateway require JWT tokens issued by the bank's identi
 | `corpai.sales.opportunity.detected` | Sales Insight | Notification |
 | `corpai.report.generated` | Report Generator | Gateway/Clients |
 | `corpai.aml.check.completed` | AML/KYC | Orchestrator |
+
+---
+
+## Infrastructure Design Decisions
+
+This section explains **why** each infrastructure component is necessary and how the system achieves full asynchronous processing.
+
+---
+
+### Why Apache Kafka?
+
+A corporate company analysis is a **long-running, multi-step workflow** that touches many independent services (KRS API, CRBR, financial analysis, AML/KYC, LLM, report generation). The total latency can exceed 30–60 seconds. Using synchronous HTTP calls between microservices for such a workflow creates several critical problems:
+
+| Problem (sync HTTP) | Solution (Kafka) |
+|---|---|
+| Blocking HTTP thread for 60 s while downstream services process | Fire-and-forget event publish; HTTP thread is freed immediately |
+| If one downstream service crashes, the whole chain fails | Kafka retains the event; the service reprocesses it after recovery |
+| Adding a new agent (e.g. ESG scoring) requires changing the orchestrator code | New consumer subscribes to the existing topic with zero orchestrator changes |
+| Only one consumer can receive a request | Fan-out: one `AnalysisRequestedEvent` is consumed **simultaneously** by Company Profile, Financial Analysis, AML/KYC, and Sales Insight agents |
+
+#### How Kafka enables parallel agent execution
+
+When an advisor requests analysis for a company, the Orchestrator publishes a **single** `AnalysisRequestedEvent` to the `corpai.analysis.requested` topic. All four downstream agents are **consumer groups** on that topic — they each receive the same event and run **in parallel**, without any agent waiting for another:
+
+```
+AnalysisRequestedEvent (NIP: 1234567890)
+        │
+        ├──► CompanyProfileAgent   ─── fetches KRS/CRBR, caches in Redis
+        ├──► FinancialAnalysisAgent ─── calculates ratios, credit maturities
+        ├──► AmlKycAgent           ─── performs ownership graph analysis
+        └──► SalesInsightAgent     ─── scores opportunities (FX, leasing, ESG…)
+```
+
+Without Kafka this parallelism would require the Orchestrator to spawn threads and manage their lifecycle, handle partial failures, and implement retries manually — all solved for free by Kafka's consumer-group model.
+
+#### Correlation ID and message ordering
+
+Every event carries a `correlationId` (UUID generated at analysis request time). This ID is used as the **Kafka partition key**, which guarantees that all events belonging to the same analysis are processed in order within a partition. The `AnalysisStateManager` uses the `correlationId` to match incoming partial results and detect when all agents have finished.
+
+#### Durability and replay
+
+Kafka persists events on disk with configurable retention. If the Report Generator service is temporarily down, it will automatically consume the pending `ReportGeneratedEvent` when it restarts — no data is lost and no manual re-trigger is needed.
+
+---
+
+### Why Redis?
+
+Redis serves **three distinct roles** in the platform, each addressing a different scalability or reliability concern:
+
+#### 1. Analysis state management (Orchestrator)
+
+The Orchestrator publishes one event and then waits for **four independent agents** to complete. It must track which agents have finished and aggregate their partial results. This aggregation state is stored in Redis with a 24-hour TTL:
+
+```
+Key:   corpai:analysis:{correlationId}
+Value: { status, companyProfile, financialData, amlResult, salesOpportunities }
+```
+
+Storing this in-process (in JVM memory) would make the Orchestrator stateful and impossible to scale horizontally. Redis makes state externalized and shared across any number of Orchestrator replicas.
+
+#### 2. Company profile caching (Company Profile Agent)
+
+Each full analysis requires fetching data from the KRS API and CRBR API. These external APIs are rate-limited and have non-trivial latency (~1–3 seconds per call). For the same NIP, the data changes at most once a day.
+
+```
+Key:   corpai:company:{nip}
+Value: serialized Company object
+TTL:   24 hours
+```
+
+Without this cache, every analysis — including V3 proactive re-scans of the entire portfolio — would hammer external APIs. With Redis, repeated analyses of the same company within 24 hours hit the cache at < 1 ms, reducing both latency and external API costs.
+
+#### 3. LLM response caching (LLM Gateway)
+
+GPT-4 API calls are expensive (cost per token) and slow (1–10 seconds). For identical or structurally similar prompts — e.g. generating a One Pager for the same company twice in one day — the LLM Gateway caches responses:
+
+```
+Key:   corpai:llm:{sha256(sanitized_prompt)}
+Value: LLM response text
+TTL:   4 hours
+```
+
+The cache key is a SHA-256 hash of the **sanitized** prompt, so two advisors asking about the same company receive the cached response immediately without an extra LLM call.
+
+---
+
+### Asynchronous Event Flow — Step by Step
+
+The following diagram shows the complete lifecycle of a company analysis request, from advisor click to report delivery, fully asynchronous:
+
+```
+  ADVISOR
+    │
+    │  POST /api/v1/analysis  { nip: "1234567890" }
+    ▼
+  GATEWAY (8079)
+    │  JWT validation, rate limiting
+    ▼
+  ORCHESTRATOR (8080)
+    │  1. Creates AnalysisRequest record in PostgreSQL (status=PENDING)
+    │  2. Initialises state in Redis: corpai:analysis:{correlationId}
+    │  3. Publishes AnalysisRequestedEvent → Kafka topic "corpai.analysis.requested"
+    │  4. Returns HTTP 202 Accepted + { analysisId, correlationId }
+    │
+    │         ◄── HTTP response already returned to advisor ──►
+    │
+    │  (All steps below happen asynchronously, in parallel)
+    │
+    ├──► COMPANY PROFILE AGENT (8081)
+    │      @KafkaListener("corpai.analysis.requested")
+    │      - Redis cache hit? → return cached Company
+    │      - Cache miss? → call KRS API + CRBR API → cache result (24h TTL)
+    │      - Publishes partial result back to Orchestrator via Redis state update
+    │
+    ├──► FINANCIAL ANALYSIS AGENT (8082)
+    │      @KafkaListener("corpai.analysis.requested")
+    │      - Calculates financial ratios, credit maturities, FX exposure
+    │      - Publishes partial result → updates Redis state
+    │
+    ├──► AML/KYC AGENT (8083)
+    │      @KafkaListener("corpai.analysis.requested")
+    │      - Builds ownership graph, checks PEP/sanctions lists
+    │      - Publishes AmlCheckCompletedEvent → "corpai.aml.check.completed"
+    │
+    └──► SALES INSIGHT ENGINE (8084)
+           @KafkaListener("corpai.analysis.requested")
+           - Scores opportunities: leasing, ESG, FX hedging, credit renewal
+           - If high-score opportunity found:
+               → publishes SalesOpportunityDetectedEvent
+                    └──► NOTIFICATION SERVICE (8089) sends push to advisor
+           - Publishes partial result → updates Redis state
+    │
+    ▼
+  ORCHESTRATOR (8080)
+    │  Monitors Redis state for { correlationId }
+    │  When all 4 agents have reported:
+    │    - Updates PostgreSQL record (status=AGGREGATING)
+    │    - Publishes AnalysisCompletedEvent → "corpai.analysis.completed"
+    │
+    ▼
+  REPORT GENERATOR (8085)
+    │  @KafkaListener("corpai.analysis.completed")
+    │  - Calls LLM Gateway (8087) with sanitized data → GPT-4 generates narrative
+    │  - LLM Gateway checks Redis cache first (4h TTL on SHA-256 prompt hash)
+    │  - Renders HTML One Pager + Full Report
+    │  - Publishes ReportGeneratedEvent → "corpai.report.generated"
+    │  - Updates PostgreSQL: stores report HTML
+    │
+    ▼
+  ADVISOR polls GET /api/v1/analysis/{id}/status  →  status=COMPLETED
+             GET /api/v1/analysis/{id}/report     →  HTML report delivered
+```
+
+The advisor receives an immediate HTTP 202 response and can poll for status. The entire analysis pipeline runs asynchronously without blocking any HTTP thread, with full parallelism across the four analysis agents.
+
+---
+
+### Why PostgreSQL?
+
+PostgreSQL is the **system of record** for all analysis requests and generated reports. It stores:
+- Audit trail: who requested what and when
+- Final report HTML (for retrieval after the async pipeline completes)
+- Status transitions (PENDING → AGGREGATING → COMPLETED / FAILED)
+
+PostgreSQL handles the **persistent, durable** data that must survive restarts, while Redis handles the **ephemeral, high-speed** state needed only during processing.
+
+---
+
+### Why Elasticsearch?
+
+Elasticsearch enables full-text search across generated reports and detected sales opportunities. Advisors can search by company name, NIP, opportunity type, or any text within the AI-generated narrative — queries that are impractical on PostgreSQL without heavy indexing.
+
+---
+
+### Why Prometheus + Grafana?
+
+Each microservice exposes a `/actuator/prometheus` endpoint (via Micrometer). Prometheus scrapes these metrics every 15 seconds. Grafana dashboards provide real-time visibility into:
+- Kafka consumer lag per topic (detects a stuck agent before advisors notice)
+- Redis cache hit/miss rates (measures caching efficiency)
+- LLM Gateway latency and retry counts (monitors GPT-4 cost and reliability)
+- Analysis pipeline end-to-end duration (P50/P95/P99 percentiles)
