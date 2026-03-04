@@ -204,3 +204,184 @@ All API calls through the gateway require JWT tokens issued by the bank's identi
 | `corpai.sales.opportunity.detected` | Sales Insight | Notification |
 | `corpai.report.generated` | Report Generator | Gateway/Clients |
 | `corpai.aml.check.completed` | AML/KYC | Orchestrator |
+
+---
+
+## Decyzje architektoniczne — infrastruktura
+
+Ta sekcja wyjaśnia **dlaczego** każdy komponent infrastruktury jest niezbędny oraz w jaki sposób system osiąga pełne przetwarzanie asynchroniczne.
+
+---
+
+### Dlaczego Apache Kafka?
+
+Analiza spółki korporacyjnej to **długotrwały, wieloetapowy przepływ pracy**, który angażuje wiele niezależnych serwisów (KRS API, CRBR, analiza finansowa, AML/KYC, LLM, generowanie raportu). Łączne opóźnienie może przekroczyć 30–60 sekund. Stosowanie synchronicznych wywołań HTTP między mikroserwisami w takim przepływie rodzi kilka krytycznych problemów:
+
+| Problem (synchroniczne HTTP) | Rozwiązanie (Kafka) |
+|---|---|
+| Blokowanie wątku HTTP przez 60 s podczas przetwarzania przez serwisy downstream | Publikacja zdarzenia „wyślij i zapomnij" — wątek HTTP zostaje natychmiast zwolniony |
+| Awaria jednego serwisu downstream powoduje przerwanie całego łańcucha | Kafka zachowuje zdarzenie; serwis przetwarza je ponownie po odzyskaniu sprawności |
+| Dodanie nowego agenta (np. scoringu ESG) wymaga zmiany kodu Orchestratora | Nowy konsument subskrybuje istniejący temat bez jakichkolwiek zmian w Orchestratorze |
+| Tylko jeden konsument może odebrać żądanie | Fan-out: jedno `AnalysisRequestedEvent` jest konsumowane **równocześnie** przez agentów: Company Profile, Financial Analysis, AML/KYC oraz Sales Insight |
+
+#### Jak Kafka umożliwia równoległe wykonywanie agentów
+
+Gdy doradca zleca analizę spółki, Orchestrator publikuje **jedno** zdarzenie `AnalysisRequestedEvent` w topiku `corpai.analysis.requested`. Wszyscy czterej agenci downstream są **oddzielnymi grupami konsumentów** tego topiku — każdy odbiera to samo zdarzenie i działa **równolegle**, bez czekania na pozostałych:
+
+```
+AnalysisRequestedEvent (NIP: 1234567890)
+        │
+        ├──► CompanyProfileAgent   ─── pobiera dane KRS/CRBR, cachuje w Redis
+        ├──► FinancialAnalysisAgent ─── oblicza wskaźniki, terminy kredytów
+        ├──► AmlKycAgent           ─── analizuje graf właścicielski
+        └──► SalesInsightAgent     ─── scoruje szanse sprzedażowe (FX, leasing, ESG…)
+```
+
+Bez Kafki uzyskanie takiej równoległości wymagałoby od Orchestratora ręcznego zarządzania wątkami, obsługi częściowych awarii i implementacji mechanizmu retry — to wszystko Kafka rozwiązuje automatycznie dzięki modelowi grup konsumentów.
+
+#### Correlation ID i kolejność wiadomości
+
+Każde zdarzenie zawiera `correlationId` (UUID generowany w momencie złożenia zlecenia analizy). ID ten jest używany jako **klucz partycji Kafki**, co gwarantuje, że wszystkie zdarzenia należące do tej samej analizy są przetwarzane w kolejności wewnątrz jednej partycji. `AnalysisStateManager` używa `correlationId` do dopasowywania napływających częściowych wyników i wykrywania momentu, gdy wszyscy agenci zakończyli pracę.
+
+#### Trwałość i odtwarzanie zdarzeń
+
+Kafka utrwala zdarzenia na dysku z konfigurowalnym okresem retencji. Jeśli serwis Report Generator jest tymczasowo niedostępny, po restarcie automatycznie przetworzy oczekujące zdarzenie `ReportGeneratedEvent` — żadne dane nie są tracone i nie jest wymagane ręczne ponowne wyzwolenie analizy.
+
+---
+
+### Dlaczego Redis?
+
+Redis pełni **trzy odrębne role** w platformie, każda adresuje inny problem skalowalności lub niezawodności:
+
+#### 1. Zarządzanie stanem analizy (Orchestrator)
+
+Orchestrator publikuje jedno zdarzenie, a następnie czeka na zakończenie pracy przez **czterech niezależnych agentów**. Musi śledzić, którzy agenci zakończyli działanie, i agregować ich częściowe wyniki. Ten stan agregacji jest przechowywany w Redis z TTL wynoszącym 24 godziny:
+
+```
+Klucz:   corpai:analysis:{correlationId}
+Wartość: { status, companyProfile, financialData, amlResult, salesOpportunities }
+```
+
+Przechowywanie tego stanu w pamięci JVM uczyniłoby Orchestratora stanowym i uniemożliwiłoby skalowanie poziome. Redis eksternalizuje stan i udostępnia go dowolnej liczbie replik Orchestratora.
+
+#### 2. Cache profilu spółki (Company Profile Agent)
+
+Każda pełna analiza wymaga pobrania danych z KRS API i CRBR API. Te zewnętrzne API mają limity wywołań i nietrywialną latencję (~1–3 sekundy na jedno wywołanie). Dla danego NIP dane zmieniają się co najwyżej raz dziennie.
+
+```
+Klucz:  corpai:company:{nip}
+Wartość: zserializowany obiekt Company
+TTL:    24 godziny
+```
+
+Bez tego cache każda analiza — w tym proaktywne re-skany całego portfela w wersji V3 — przeciążałaby zewnętrzne API. Dzięki Redis powtórne analizy tej samej spółki w ciągu 24 godzin trafią w cache w czasie < 1 ms, co redukuje zarówno opóźnienia, jak i koszty wywołań zewnętrznych API.
+
+#### 3. Cache odpowiedzi LLM (LLM Gateway)
+
+Wywołania GPT-4 API są kosztowne (opłata za tokeny) i wolne (1–10 sekund). Dla identycznych lub strukturalnie podobnych promptów — np. generowanie One Pagera dla tej samej spółki dwa razy w ciągu jednego dnia — LLM Gateway cachuje odpowiedzi:
+
+```
+Klucz:  corpai:llm:{sha256(oczyszczony_prompt)}
+Wartość: tekst odpowiedzi LLM
+TTL:    4 godziny
+```
+
+Kluczem cache jest hash SHA-256 **oczyszczonego** prompta, dzięki czemu dwaj doradcy pytający o tę samą spółkę otrzymają odpowiedź z cache natychmiast, bez dodatkowego wywołania LLM.
+
+---
+
+### Asynchroniczny przepływ zdarzeń — krok po kroku
+
+Poniższy diagram przedstawia pełny cykl życia zlecenia analizy spółki — od kliknięcia przez doradcę do dostarczenia raportu, w pełni asynchronicznie:
+
+```
+  DORADCA
+    │
+    │  POST /api/v1/analysis  { nip: "1234567890" }
+    ▼
+  GATEWAY (8079)
+    │  Walidacja JWT, rate limiting
+    ▼
+  ORCHESTRATOR (8080)
+    │  1. Tworzy rekord AnalysisRequest w PostgreSQL (status=PENDING)
+    │  2. Inicjalizuje stan w Redis: corpai:analysis:{correlationId}
+    │  3. Publikuje AnalysisRequestedEvent → temat Kafka "corpai.analysis.requested"
+    │  4. Zwraca HTTP 202 Accepted + { analysisId, correlationId }
+    │
+    │         ◄── odpowiedź HTTP już zwrócona do doradcy ──►
+    │
+    │  (Wszystkie poniższe kroki wykonują się asynchronicznie, równolegle)
+    │
+    ├──► COMPANY PROFILE AGENT (8081)
+    │      @KafkaListener("corpai.analysis.requested")
+    │      - Trafienie w cache Redis? → zwróć zbuforowaną spółkę
+    │      - Brak w cache? → wywołaj KRS API + CRBR API → zapisz wynik (TTL 24h)
+    │      - Publikuje częściowy wynik do Orchestratora przez aktualizację stanu Redis
+    │
+    ├──► FINANCIAL ANALYSIS AGENT (8082)
+    │      @KafkaListener("corpai.analysis.requested")
+    │      - Oblicza wskaźniki finansowe, terminy kredytów, ekspozycję FX
+    │      - Publikuje częściowy wynik → aktualizuje stan Redis
+    │
+    ├──► AML/KYC AGENT (8083)
+    │      @KafkaListener("corpai.analysis.requested")
+    │      - Buduje graf właścicielski, sprawdza listy PEP/sankcji
+    │      - Publikuje AmlCheckCompletedEvent → "corpai.aml.check.completed"
+    │
+    └──► SALES INSIGHT ENGINE (8084)
+           @KafkaListener("corpai.analysis.requested")
+           - Scoruje szanse: leasing, ESG, hedging FX, odnowienie kredytu
+           - Jeśli znaleziono szansę o wysokim score:
+               → publikuje SalesOpportunityDetectedEvent
+                    └──► NOTIFICATION SERVICE (8089) wysyła powiadomienie do doradcy
+           - Publikuje częściowy wynik → aktualizuje stan Redis
+    │
+    ▼
+  ORCHESTRATOR (8080)
+    │  Monitoruje stan Redis dla { correlationId }
+    │  Gdy wszyscy 4 agenci zgłoszą wyniki:
+    │    - Aktualizuje rekord PostgreSQL (status=AGGREGATING)
+    │    - Publikuje AnalysisCompletedEvent → "corpai.analysis.completed"
+    │
+    ▼
+  REPORT GENERATOR (8085)
+    │  @KafkaListener("corpai.analysis.completed")
+    │  - Wywołuje LLM Gateway (8087) z oczyszczonymi danymi → GPT-4 generuje narrację
+    │  - LLM Gateway sprawdza najpierw cache Redis (TTL 4h, klucz SHA-256 prompta)
+    │  - Renderuje HTML One Pager + Pełny Raport
+    │  - Publikuje ReportGeneratedEvent → "corpai.report.generated"
+    │  - Aktualizuje PostgreSQL: zapisuje HTML raportu
+    │
+    ▼
+  DORADCA odpytuje GET /api/v1/analysis/{id}/status  →  status=COMPLETED
+                   GET /api/v1/analysis/{id}/report  →  raport HTML dostarczony
+```
+
+Doradca otrzymuje natychmiastową odpowiedź HTTP 202 i może odpytywać o status. Cały potok analizy działa asynchronicznie, nie blokując żadnego wątku HTTP, z pełną równoległością czterech agentów analitycznych.
+
+---
+
+### Dlaczego PostgreSQL?
+
+PostgreSQL jest **systemem referencyjnym (source of truth)** dla wszystkich zleceń analizy i wygenerowanych raportów. Przechowuje:
+- Ślad audytowy: kto, co i kiedy zlecił
+- HTML finalnego raportu (do pobrania po zakończeniu asynchronicznego potoku)
+- Przejścia statusów (PENDING → AGGREGATING → COMPLETED / FAILED)
+
+PostgreSQL obsługuje dane **trwałe i niezawodne**, które muszą przeżyć restarty, podczas gdy Redis obsługuje **efemeryczny, wysokowydajny** stan potrzebny wyłącznie podczas przetwarzania.
+
+---
+
+### Dlaczego Elasticsearch?
+
+Elasticsearch umożliwia pełnotekstowe przeszukiwanie wygenerowanych raportów i wykrytych szans sprzedażowych. Doradcy mogą wyszukiwać po nazwie spółki, NIP, typie szansy lub dowolnym fragmencie narracji wygenerowanej przez AI — zapytania tego rodzaju są niepraktyczne w PostgreSQL bez rozbudowanego indeksowania.
+
+---
+
+### Dlaczego Prometheus + Grafana?
+
+Każdy mikroserwis udostępnia endpoint `/actuator/prometheus` (przez Micrometer). Prometheus zbiera metryki co 15 sekund. Dashboardy Grafany zapewniają wgląd w czasie rzeczywistym w:
+- Opóźnienie konsumentów Kafki (consumer lag) per temat — wykrywa zablokowanego agenta zanim doradcy to zauważą
+- Wskaźniki trafień/braków cache Redis — mierzy efektywność buforowania
+- Opóźnienia LLM Gateway i liczby retry — monitoruje koszty i niezawodność GPT-4
+- Czas trwania potoku analizy od końca do końca (percentyle P50/P95/P99)
